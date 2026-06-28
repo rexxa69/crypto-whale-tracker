@@ -47,7 +47,7 @@ async function fetchBinanceWhaleTrades() {
   let highValueTrades = [];
   
   // Batas minimal satu kali klik order (misal: > $100,000 USD untuk skala order instan di market)
-  const MIN_VALUE_USD = 100000; 
+  const MIN_VALUE_USD = 1000; 
 
   for (const symbol of symbols) {
     try {
