@@ -20,71 +20,89 @@ module.exports = async (req, res) => {
       return res.status(200).send('OK');
     }
 
-    // 1. Ambil data transaksi live
-    const whaleTrades = await fetchDynamicCoinbaseTrades(coinInput); 
+    // 1. Ambil data transaksi mentah dari Coinbase
+    const trades = await fetchRawCoinbaseTrades(coinInput); 
 
-    if (!whaleTrades || whaleTrades.length === 0) {
-      await sendToTelegram(chatId, `❌ Data koin *${coinInput}* tidak ditemukan di Coinbase atau tidak ada transaksi signifikan saat ini.`);
+    if (!trades || trades.length === 0) {
+      await sendToTelegram(chatId, `❌ Data koin *${coinInput}* tidak ditemukan atau tidak ada transaksi signifikan saat ini.`);
       return res.status(200).send('OK');
     }
 
     // =================================================================
-    // TEMPLATE FORMATTER (Sesuai Blueprint image_0838fb.png)
+    // LOGIKA AGREGASI DATA (PENGOLAHAN MATEMATIS)
     // =================================================================
-    
-    // Konversi Tanggal ke format: Hari Bulan Tahun (Contoh: 28 Juni 2026)
+    let buyCount = 0;
+    let buyTotalUsd = 0;
+    let sellCount = 0;
+    let sellTotalUsd = 0;
+
+    trades.forEach(tx => {
+      if (tx.side === 'BUY') {
+        buyCount++;
+        buyTotalUsd += tx.value_usd;
+      } else if (tx.side === 'SELL') {
+        sellCount++;
+        sellTotalUsd += tx.value_usd;
+      }
+    });
+
+    // Jalankan kalkulasi jika tidak ada data yang lolos filter
+    if (buyCount === 0 && sellCount === 0) {
+      await sendToTelegram(chatId, `❌ Tidak ada transaksi institusi/whale yang lolos filter ukuran minimum saat ini.`);
+      return res.status(200).send('OK');
+    }
+
+    // Format Tanggal: Hari Bulan Tahun
     const namaBulan = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
     const d = new Date();
     const tanggalFormat = `${d.getDate()} ${namaBulan[d.getMonth()]} ${d.getFullYear()}`;
 
-    let totalBuyUsd = 0;
-    let totalSellUsd = 0;
-    let daftarTeksTransaksi = [];
+    // Menentukan penanda status dominasi volume global
+    const emojiStatus = buyTotalUsd >= sellTotalUsd ? '🟢' : '🔴';
 
-    // Proteksi format string agar tidak terjadi double text atau salah bold
-    whaleTrades.forEach(tx => {
-      if (tx.eksekusi === 'BUY') {
-        totalBuyUsd += tx.total_usd;
-      } else {
-        totalSellUsd += tx.total_usd;
-      }
+    // Menyusun baris list berdasarkan akumulasi data agregat
+    let barisList = [];
+    if (buyCount > 0) {
+      barisList.push(`- Pembelian ${coinInput} | Inflow dari ${buyCount} transaksi ( Senilai : $${Math.round(buyTotalUsd).toLocaleString('en-US')} )`);
+    }
+    if (sellCount > 0) {
+      barisList.push(`- Penjualan ${coinInput} | Outflow dari ${sellCount} transaksi ( Senilai : $${Math.round(sellTotalUsd).toLocaleString('en-US')} )`);
+    }
 
-      const labelAksi = tx.eksekusi === 'BUY' ? 'Pembelian' : 'Penjualan';
-      const formatTotalUsd = Math.round(tx.total_usd).toLocaleString('en-US');
-
-      // Format strict sesuai gambar: - Pembelian BTC ( Senilai : $999,999 )
-      daftarTeksTransaksi.push(`- ${labelAksi} ${tx.koin} ( Senilai : $${formatTotalUsd} )`);
-    });
-
-    // Menentukan emoji indikator dominasi volume
-    const emojiStatus = totalBuyUsd >= totalSellUsd ? '🟢' : '🔴';
-
-    // Menyusun susunan baris teks atas
+    // Menyusun Header sesuai blueprint target template Anda
     const barisHeader = `📊 *HASIL RISET MARKET FLOW: ${coinInput}* 📊\n\n`;
     const barisStatus = `${emojiStatus} _Data Transaksi Teratas_, ${tanggalFormat}.\n\n`;
-    const barisList = `${daftarTeksTransaksi.join('\n')}\n\n`;
+    const gabunganList = `${barisList.join('\n')}\n\n`;
 
     // =================================================================
-    // PROMPT AI UNTUK KESIMPULAN RAW
+    // PROMPT AI UNTUK KESIMPULAN BERDASARKAN HASIL AGREGASI
     // =================================================================
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
+    const ringkasanDataUntukAI = {
+      koin: coinInput,
+      total_inflow_usd: buyTotalUsd,
+      total_inflow_transaksi: buyCount,
+      total_outflow_usd: sellTotalUsd,
+      total_outflow_transaksi: sellCount
+    };
+
     const promptAI = `
-      Anda adalah analis pasar crypto senior yang dingin, kaku, dan logis. Berikan kesimpulan singkat berdasarkan data transaksi berikut:
-      ${JSON.stringify(whaleTrades, null, 2)}
+      Anda adalah analis data pasar crypto senior. Berikan kesimpulan berdasarkan ringkasan volume transaksi besar berikut:
+      ${JSON.stringify(ringkasanDataUntukAI, null, 2)}
       
       Tugas Anda:
-      Tuliskan analisis 1 sampai 2 kalimat tegas mengenai kemana arah pergerakan uang institusi saat ini pada koin tersebut dan dampaknya terhadap harga secara objektif.
+      Tuliskan analisis logis 1 hingga 2 kalimat mengenai struktur kekuatan pasar saat ini (apakah pembeli atau penjual yang memegang kendali volume) serta dampaknya terhadap pergerakan harga.
       
-      Aturan Ketat: Jangan gunakan kata pengantar, jangan buat judul baru, langsung berikan kalimat analisisnya saja. Gunakan Bahasa Indonesia.
+      Aturan Ketat: Jangan mengulang menyebutkan angka statistik di atas, jangan ada kata pengantar, langsung keluarkan kalimat intinya saja.
     `;
 
     const result = await model.generateContent(promptAI);
     const kesimpulanRaw = result.response.text().trim();
 
-    // Menggabungkan seluruh data ke format final gambar
-    const pesanAkhir = `${barisHeader}${barisStatus}${barisList}*Kesimpulan Logis* : ${kesimpulanRaw}`;
+    // Gabungkan struktur teks final
+    const pesanAkhir = `${barisHeader}${barisStatus}${gabunganList}*Kesimpulan Logis* : ${kesimpulanRaw}`;
 
     await sendToTelegram(chatId, pesanAkhir);
     return res.status(200).send('OK');
@@ -95,36 +113,31 @@ module.exports = async (req, res) => {
   }
 };
 
-async function fetchDynamicCoinbaseTrades(coin) {
+async function fetchRawCoinbaseTrades(coin) {
   const pair = `${coin}-USD`;
-  let highValueTrades = [];
-  const MIN_VALUE_USD = 1000; 
-
   try {
     const response = await fetch(`https://api.exchange.coinbase.com/products/${pair}/trades?limit=100`, {
       headers: { 'User-Agent': 'Mozilla/5.0' }
     });
     
     if (!response.ok) return null;
-    const trades = await response.json();
+    const data = await response.json();
     
-    if (Array.isArray(trades)) {
-      for (const t of trades) {
-        const valueUsd = parseFloat(t.price) * parseFloat(t.size);
-        if (valueUsd >= MIN_VALUE_USD) {
-          highValueTrades.push({
-            koin: coin,
-            eksekusi: t.side.toUpperCase(), 
-            total_usd: valueUsd
-          });
-        }
-      }
-    }
+    if (!Array.isArray(data)) return null;
+
+    // Batasi filter ukuran transaksi minimum (misal: di atas $5.000 USD untuk melacak kelas institusi mikro)
+    const MIN_VALUE_USD = 5000; 
+
+    return data
+      .map(t => ({
+        side: t.side.toUpperCase(),
+        value_usd: parseFloat(t.price) * parseFloat(t.size)
+      }))
+      .filter(tx => tx.value_usd >= MIN_VALUE_USD);
+
   } catch (e) {
     return null;
   }
-
-  return highValueTrades.sort((a, b) => b.total_usd - a.total_usd).slice(0, 4);
 }
 
 async function sendToTelegram(chatId, text) {
