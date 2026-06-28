@@ -126,7 +126,7 @@ async function fetchRawCoinbaseTrades(coin) {
     if (!Array.isArray(data)) return null;
 
     // Batasi filter ukuran transaksi minimum (misal: di atas $5.000 USD untuk melacak kelas institusi mikro)
-    const MIN_VALUE_USD = 5000; 
+    const MIN_VALUE_USD = 10000; 
 
     return data
       .map(t => ({
