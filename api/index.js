@@ -2,38 +2,37 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 module.exports = async (req, res) => {
   try {
-    // 1. Mengambil data eksekusi order WHALE dari API Publik Binance (KEYLESS)
-    const whaleTrades = await fetchBinanceWhaleTrades(); 
+    // 1. Ambil data transaksi LIVE dari Coinbase (Aman dari blokir server US)
+    const whaleTrades = await fetchCoinbaseTrades(); 
 
     if (!whaleTrades || whaleTrades.length === 0) {
-      return res.status(200).json({ message: "Kondisi pasar tenang. Tidak ada transaksi order raksasa." });
+      return res.status(200).json({ message: "Kondisi pasar tenang di Coinbase. Tidak ada transaksi besar." });
     }
 
     // 2. Inisialisasi Gemini AI
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-    // 3. Prompt analisis orderbook / market pressure
+    // 3. Prompt Analisis
     const prompt = `
-      Anda adalah analis pasar crypto senior dan spesifik melacak pergerakan order besar (Whale Trades).
-      Analisis data transaksi pasar live berikut yang baru saja dieksekusi di Binance:
+      Anda adalah analis pasar crypto senior. Analisis data transaksi live dari Coinbase Exchange berikut:
       ${JSON.stringify(whaleTrades, null, 2)}
       
       Tugas Anda:
-      1. Jabarkan transaksi tersebut dalam bentuk poin-poin tebal (Koin, Jenis Eksekusi BUY/SELL, Jumlah Koin, dan Nilai USD).
-      2. Berikan kesimpulan logis: Apakah pasar sedang didominasi oleh tekanan jual (Whale Dumping) atau tekanan beli (Whale Accumulation) dalam skala masif.
-      3. Berikan dampak psikologis instan terhadap pergerakan harga koin tersebut.
+      1. Jabarkan transaksi dalam bentuk poin-poin tebal (Koin, BUY/SELL, Jumlah, total USD).
+      2. Berikan kesimpulan logis apakah institusi/whale di Coinbase dominan melakukan Akumulasi (BUY) atau Distribusi (SELL).
+      3. Berikan dampak instan ke harga pasar.
       
-      Gunakan bahasa Indonesia yang santai, tegas, berpatokan pada logika money flow, dan tanpa basa-basi.
+      Gunakan bahasa Indonesia yang santai tapi profesional. Jangan ada basa-basi di awal teks.
     `;
 
-    // 4. Eksekusi AI & Kirim ke Telegram
+    // 4. Kirim ke Telegram
     const result = await model.generateContent(prompt);
     const aiAnalysis = result.response.text();
 
     await sendToTelegram(aiAnalysis);
 
-    return res.status(200).json({ success: true, message: "Sinyal live Binance berhasil dikirim!" });
+    return res.status(200).json({ success: true, message: "Sinyal Coinbase berhasil terkirim!" });
 
   } catch (error) {
     console.error(error);
@@ -41,42 +40,43 @@ module.exports = async (req, res) => {
   }
 };
 
-// FUNGSI BARU: Melacak transaksi raksasa langsung dari pasar spot Binance
-async function fetchBinanceWhaleTrades() {
-  const symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
+// FUNGSI BARU: Mengambil data dari Coinbase API
+async function fetchCoinbaseTrades() {
+  const pairs = ['BTC-USD', 'ETH-USD', 'SOL-USD'];
   let highValueTrades = [];
   
-  // Batas minimal satu kali klik order (misal: > $100,000 USD untuk skala order instan di market)
+  // Set ke $1.000 USD agar PASTI lolos filter saat uji coba awal ini
   const MIN_VALUE_USD = 1000; 
 
-  for (const symbol of symbols) {
+  for (const pair of pairs) {
     try {
-      // Mengambil 100 transaksi perdagangan terbaru yang terjadi di pasar
-      const response = await fetch(`https://api.binance.com/api/v3/trades?symbol=${symbol}&limit=100`);
+      const response = await fetch(`https://api.exchange.coinbase.com/products/${pair}/trades?limit=30`, {
+        headers: { 'User-Agent': 'CryptoWhaleTrackerBot/1.0' } // Coinbase wajib menggunakan header ini
+      });
       const trades = await response.json();
       
       if (Array.isArray(trades)) {
         for (const t of trades) {
-          const valueUsd = parseFloat(t.price) * parseFloat(t.qty);
+          const valueUsd = parseFloat(t.price) * parseFloat(t.size);
           
           if (valueUsd >= MIN_VALUE_USD) {
             highValueTrades.push({
-              koin: symbol.replace('USDT', ''),
-              eksekusi: t.isBuyerMaker ? 'SELL (Whale Hantam Kiri)' : 'BUY (Whale Hantam Kanan)',
+              koin: pair.split('-')[0],
+              eksekusi: t.side.toUpperCase() === 'BUY' ? 'BUY (Whale Ambil Barang)' : 'SELL (Whale Lepas Barang)',
               harga_satuan: parseFloat(t.price),
-              jumlah_koin: parseFloat(t.qty),
+              jumlah_koin: parseFloat(t.size),
               total_usd: valueUsd,
-              Waktu: new Date(t.time).toLocaleTimeString('id-ID')
+              waktu: new Date(t.time).toLocaleTimeString('id-ID')
             });
           }
         }
       }
     } catch (e) {
-      console.error(`Gagal mengambil data untuk ${symbol}:`, e);
+      console.error(`Gagal ambil data Coinbase untuk ${pair}:`, e);
     }
   }
 
-  // Urutkan dari transaksi yang nilainya paling besar dan ambil maksimal 5 teratas agar teks Telegram tidak kepanjangan
+  // Ambil 5 transaksi terbesar yang tertangkap
   return highValueTrades.sort((a, b) => b.total_usd - a.total_usd).slice(0, 5);
 }
 
