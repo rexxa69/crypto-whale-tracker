@@ -2,7 +2,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 module.exports = async (req, res) => {
   try {
-    // 1. Ambil data transaksi LIVE dari Coinbase (Aman dari blokir server US)
+    // 1. Ambil data transaksi LIVE dari Coinbase
     const whaleTrades = await fetchCoinbaseTrades(); 
 
     if (!whaleTrades || whaleTrades.length === 0) {
@@ -13,26 +13,29 @@ module.exports = async (req, res) => {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-    // 3. Prompt Analisis
+    // 3. Prompt Baru: Memaksa format visual yang rapi dan terstruktur
     const prompt = `
-      Anda adalah analis pasar crypto senior. Analisis data transaksi live dari Coinbase Exchange berikut:
+      Anda adalah sistem otomatis pelacak Smart Money dan Order Flow institusi senior.
+      Analisis data transaksi dari Coinbase Exchange berikut:
       ${JSON.stringify(whaleTrades, null, 2)}
       
-      Tugas Anda:
-      1. Jabarkan transaksi dalam bentuk poin-poin tebal (Koin, BUY/SELL, Jumlah, total USD).
-      2. Berikan kesimpulan logis apakah institusi/whale di Coinbase dominan melakukan Akumulasi (BUY) atau Distribusi (SELL).
-      3. Berikan dampak instan ke harga pasar.
+      Tugas Anda adalah menyusun laporan singkat untuk Telegram dengan ketentuan format berikut:
+      - WAJIB langsung mulai dengan "🚨 *WHALE ALERT DETECTED* 🚨" di baris pertama.
+      - Gunakan penanda emoji 🟢 jika transaksi dominan BUY (Whale Ambil Barang).
+      - Gunakan penanda emoji 🔴 jika transaksi dominan SELL (Whale Lepas Barang).
+      - Susun detail angka transaksi menggunakan poin-poin tebal yang rapi.
+      - Berikan bagian *Analisis Dampak Instan:* maksimal 2 kalimat tegas, fokus pada logika pergerakan uang (Money Flow), tanpa asumsi emosional.
       
-      Gunakan bahasa Indonesia yang santai tapi profesional. Jangan ada basa-basi di awal teks.
+      Aturan Ketat: Jangan menulis kalimat pembuka seperti "Berikut adalah laporannya" atau kalimat basa-basi sejenis. Langsung keluarkan hasil format akhirnya menggunakan sintaks Markdown (*teks* untuk cetak tebal). Gunakan Bahasa Indonesia yang ringkas dan tajam.
     `;
 
-    // 4. Kirim ke Telegram
+    // 4. Kirim hasil formatan AI ke Telegram
     const result = await model.generateContent(prompt);
     const aiAnalysis = result.response.text();
 
     await sendToTelegram(aiAnalysis);
 
-    return res.status(200).json({ success: true, message: "Sinyal Coinbase berhasil terkirim!" });
+    return res.status(200).json({ success: true, message: "Sinyal premium berhasil terkirim!" });
 
   } catch (error) {
     console.error(error);
@@ -40,18 +43,17 @@ module.exports = async (req, res) => {
   }
 };
 
-// FUNGSI BARU: Mengambil data dari Coinbase API
 async function fetchCoinbaseTrades() {
   const pairs = ['BTC-USD', 'ETH-USD', 'SOL-USD'];
   let highValueTrades = [];
   
-  // Set ke $1.000 USD agar PASTI lolos filter saat uji coba awal ini
+  // Sesuai saran, ganti angka ini (misal 50000 atau 100000) jika ingin menyaring transaksi yang lebih besar saja
   const MIN_VALUE_USD = 1000; 
 
   for (const pair of pairs) {
     try {
       const response = await fetch(`https://api.exchange.coinbase.com/products/${pair}/trades?limit=30`, {
-        headers: { 'User-Agent': 'CryptoWhaleTrackerBot/1.0' } // Coinbase wajib menggunakan header ini
+        headers: { 'User-Agent': 'CryptoWhaleTrackerBot/1.0' }
       });
       const trades = await response.json();
       
@@ -62,10 +64,10 @@ async function fetchCoinbaseTrades() {
           if (valueUsd >= MIN_VALUE_USD) {
             highValueTrades.push({
               koin: pair.split('-')[0],
-              eksekusi: t.side.toUpperCase() === 'BUY' ? 'BUY (Whale Ambil Barang)' : 'SELL (Whale Lepas Barang)',
-              harga_satuan: parseFloat(t.price),
-              jumlah_koin: parseFloat(t.size),
-              total_usd: valueUsd,
+              eksekusi: t.side.toUpperCase() === 'BUY' ? 'BUY' : 'SELL',
+              harga_satuan: parseFloat(t.price).toLocaleString('en-US'),
+              jumlah_koin: parseFloat(t.size).toFixed(4),
+              total_usd: valueUsd.toLocaleString('en-US'),
               waktu: new Date(t.time).toLocaleTimeString('id-ID')
             });
           }
@@ -76,10 +78,10 @@ async function fetchCoinbaseTrades() {
     }
   }
 
-  // Ambil 5 transaksi terbesar yang tertangkap
-  return highValueTrades.sort((a, b) => b.total_usd - a.total_usd).slice(0, 5);
+  return highValueTrades.sort((a, b) => b.total_usd - a.total_usd).slice(0, 3);
 }
 
+// FUNGSI UPDATE: Menambahkan parse_mode 'Markdown' agar Telegram bisa memproses teks tebal/emoji
 async function sendToTelegram(text) {
   const token = process.env.TELEGRAM_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -88,6 +90,10 @@ async function sendToTelegram(text) {
   await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text: text })
+    body: JSON.stringify({ 
+      chat_id: chatId, 
+      text: text,
+      parse_mode: 'Markdown' // Mengaktifkan pembacaan format cetak tebal dan miring
+    })
   });
 }
