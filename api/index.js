@@ -18,9 +18,7 @@ module.exports = async (req, res) => {
   try {
     const { message, callback_query } = req.body;
 
-    // =================================================================
-    // KONDISI 1: MENANGKAP PERINTAH TEKS (COMMAND DAN PENCARIAN BEBAS)
-    // =================================================================
+    // SCENARIO 1: MENANGKAP PERINTAH TEKS
     if (message && message.text) {
       const chatId = message.chat.id;
       const textInput = message.text.trim().toUpperCase();
@@ -122,18 +120,15 @@ module.exports = async (req, res) => {
         return res.status(200).send('OK');
       }
 
-      // FITUR INDUK: Menangkap input koin bebas manual (2 hingga 6 karakter huruf)
       if (/^[A-Z]{2,6}$/.test(textInput)) {
-        await sendTimeframeMenu(chatId, textInput); // Parameter koin diteruskan dengan benar
+        await sendTimeframeMenu(chatId, textInput); 
       } else {
         await sendToTelegram(chatId, "❌ Perintah tidak dikenal. Gunakan `/watchlist`, `/help`, atau ketik simbol koin langsung (Contoh: `SOL`).");
       }
       return res.status(200).send('OK');
     }
 
-    // =================================================================
-    // KONDISI 2: MENANGKAP TOMBOL INTERAKTIF (CALLBACK QUERIES)
-    // =================================================================
+    // SCENARIO 2: MENANGKAP TOMBOL INTERAKTIF
     if (callback_query) {
       const callbackQueryId = callback_query.id;
       const chatId = callback_query.message.chat.id;
