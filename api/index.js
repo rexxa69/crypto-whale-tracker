@@ -1,7 +1,6 @@
 // api/index.js
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-// IMPORT MESIN PEMBANTU DARI FILE UTILS (Mundur satu folder menggunakan ../)
 const {
   getPersistentWatchlist,
   savePersistentWatchlist,
@@ -19,7 +18,9 @@ module.exports = async (req, res) => {
   try {
     const { message, callback_query } = req.body;
 
-    // SCENARIO 1: MENANGKAP PERINTAH TEKS
+    // =================================================================
+    // KONDISI 1: MENANGKAP PERINTAH TEKS (COMMAND DAN PENCARIAN BEBAS)
+    // =================================================================
     if (message && message.text) {
       const chatId = message.chat.id;
       const textInput = message.text.trim().toUpperCase();
@@ -28,12 +29,13 @@ module.exports = async (req, res) => {
         await getPersistentWatchlist(chatId); 
         const teksSapaan = 
           "👋 *Selamat Datang di Bot Riset Market Flow!*\n\n" +
-          "⚙️ *Atur Watchlist Anda (Maksimal 3 Koin):*\n" +
+          "⚙️ *Aturan Watchlist Anda (Maksimal 3 Koin):*\n" +
           "1. Slot 1 dikunci otomatis untuk *BTC*.\n" +
           "2. Slot 2 & 3 Bebas Anda tentukan dan tersimpan permanen di database.\n\n" +
           "Gunakan menu perintah berikut:\n" +
           "/watchlist - Cek analisis volume koin andalan Anda\n" +
-          "/help - Buka buku panduan lengkap penggunaan bot";
+          "/help - Buka buku panduan lengkap penggunaan bot\n\n" +
+          "💡 *Pencarian Bebas:* Anda bisa mengetik nama koin apa saja secara langsung untuk meriset volume (Contoh: `SOL`, `AVAX`, `LINK`).";
         
         await sendToTelegram(chatId, teksSapaan);
         return res.status(200).send('OK');
@@ -46,11 +48,12 @@ module.exports = async (req, res) => {
 
         const teksHelp = 
           "📖 *BUKU PANDUAN LENGKAP PENGGUNAAN BOT* 📖\n\n" +
-          "💡 *1. Cara Riset Koin Instan (On-Demand):*\n" +
-          "• Ketik langsung kode/simbol koin yang ingin Anda riset tanpa garis miring.\n" +
-          "• *Contoh:* Cukup ketik `SOL` atau `AVAX` lalu kirim.\n\n" +
+          "💡 *1. Cara Riset Koin Instan (On-Demand / Bebas):*\n" +
+          "• Ketik langsung kode/simbol koin apa saja yang ingin Anda riset tanpa menggunakan garis miring.\n" +
+          "• *Contoh:* Cukup ketik `SOL` atau `AVAX` atau `LINK` lalu kirim.\n" +
+          "• Bot akan mendeteksi input tersebut dan mengeluarkan pilihan rentang waktu riset.\n\n" +
           "📋 *2. Fitur Watchlist Permanen (/watchlist):*\n" +
-          "• Ketik perintah `/watchlist` untuk melakukan pemindaian serentak dalam rentang 24 jam.\n\n" +
+          "• Ketik perintah `/watchlist` untuk melakukan pemindaian serentak pada koin favorit Anda dalam rentang 24 jam.\n\n" +
           "⚙️ *3. Status Slot Watchlist Akun Anda:* \n" +
           "• Slot 1 : 🔒 *BTC*\n" +
           "• Slot 2 : 🟢 Terisi koin: " + slot2Label + "\n" +
@@ -111,7 +114,6 @@ module.exports = async (req, res) => {
 
         const pesanAkhir = `${barisHeader}${gabunganList}${kesimpulanRaw}`;
 
-        // Hapus status loading lalu kirim pesan final
         const token = process.env.TELEGRAM_TOKEN;
         if (processingMsgId) {
           await fetch(`https://api.telegram.org/bot${token}/deleteMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, message_id: processingMsgId }) });
@@ -120,22 +122,24 @@ module.exports = async (req, res) => {
         return res.status(200).send('OK');
       }
 
+      // FITUR INDUK: Menangkap input koin bebas manual (2 hingga 6 karakter huruf)
       if (/^[A-Z]{2,6}$/.test(textInput)) {
-        await sendTimeframeMenu(chatId, textInput);
+        await sendTimeframeMenu(chatId, textInput); // Parameter koin diteruskan dengan benar
       } else {
-        await sendToTelegram(chatId, "❌ Perintah tidak dikenal. Gunakan `/watchlist`, `/help`, atau ketik simbol koin langsung.");
+        await sendToTelegram(chatId, "❌ Perintah tidak dikenal. Gunakan `/watchlist`, `/help`, atau ketik simbol koin langsung (Contoh: `SOL`).");
       }
       return res.status(200).send('OK');
     }
 
-    // SCENARIO 2: MENANGKAP TOMBOL INTERAKTIF
+    // =================================================================
+    // KONDISI 2: MENANGKAP TOMBOL INTERAKTIF (CALLBACK QUERIES)
+    // =================================================================
     if (callback_query) {
       const callbackQueryId = callback_query.id;
       const chatId = callback_query.message.chat.id;
       const callbackData = callback_query.data; 
       const token = process.env.TELEGRAM_TOKEN;
 
-      // Matikan efek loading tombol di Telegram
       await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callback_query_id: callbackQueryId }) });
 
       if (callbackData.startsWith('MANAGE_SLOT:')) {
