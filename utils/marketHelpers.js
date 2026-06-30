@@ -85,15 +85,15 @@ async function calculateRealTransactionFlow(coin, timeframe) {
   }
 }
 
-// 4. Kirim Tombol Pilihan Menu Waktu ke Telegram
-async function sendTimeframeMenu(chatId) {
+// 4. PERBAIKAN DI SINI: Sekarang menerima parameter 'coin' secara dinamis
+async function sendTimeframeMenu(chatId, coin) {
   const token = process.env.TELEGRAM_TOKEN;
   await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       chat_id: chatId,
-      text: "📊 *Riset Jangka Waktu*\n\nSilakan tentukan durasi agregat transaksi riil yang mau dibedah:",
+      text: `📊 *Riset Market Flow untuk ${coin}*\n\nSilakan tentukan durasi agregat transaksi riil yang mau dibedah:`,
       parse_mode: 'Markdown',
       reply_markup: {
         inline_keyboard: [
@@ -141,7 +141,6 @@ async function sendToTelegramWithButtons(chatId, text, replyMarkup) {
   });
 }
 
-// Export semua fungsi agar bisa di-import oleh file api/index.js
 module.exports = {
   getPersistentWatchlist,
   savePersistentWatchlist,
