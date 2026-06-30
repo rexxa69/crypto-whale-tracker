@@ -33,12 +33,13 @@ async function savePersistentWatchlist(chatId, watchlistArray) {
   }
 }
 
-// 3. Kalkulator Hitung Lembaran Transaksi Riil Coinbase
+// 3. PERBAIKAN TOTAL: Kalkulator Hitung Lembaran Transaksi Dinamis
 async function calculateRealTransactionFlow(coin, timeframe) {
   const pair = `${coin}-USD`;
   let total_buy = 0, total_sell = 0;
 
   try {
+    // KONDISI A: RENTANG PENDEK (Membaca lembar nota transaksi mentah riil detik demi detik)
     if (timeframe === '1H' || timeframe === '2H' || timeframe === '4H') {
       let cursor = '';
       const maxPages = timeframe === '1H' ? 3 : timeframe === '2H' ? 5 : 8;
@@ -58,20 +59,47 @@ async function calculateRealTransactionFlow(coin, timeframe) {
         });
         if (!cursor) break;
       }
-    } else {
-      const response = await fetch(`https://api.exchange.coinbase.com/products/${pair}/stats`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-      if (!response.ok) return null;
-      const stats = await response.json();
-      
-      const dailyVolumeUsd = parseFloat(stats.volume) * parseFloat(stats.last);
-      let multiplier = 1;
-      if (timeframe === '1W') multiplier = 7;
-      if (timeframe === '1M') multiplier = 30;
-      if (timeframe === 'YTD') multiplier = 180;
+    } 
+    // KONDISI B: RENTANG PANJANG (1D, 1W, 1M, YTD) -> Hitung Agregasi Dinamis per Jam/Hari
+    else {
+      let granularity = 86400; // Default 1 Hari (86400 detik)
+      let limit = 30;
 
-      const totalEstimatedVolume = dailyVolumeUsd * multiplier;
-      total_buy = totalEstimatedVolume * 0.51; 
-      total_sell = totalEstimatedVolume * 0.49;
+      if (timeframe === '1D') { granularity = 3600; limit = 24; }       // 24 Jam terakhir (dipecah per jam)
+      else if (timeframe === '1W') { granularity = 21600; limit = 28; }  // 7 Hari terakhir (dipecah per 6j)
+      else if (timeframe === '1M') { granularity = 86400; limit = 30; }  // 30 Hari terakhir (dipecah per hari)
+      else if (timeframe === 'YTD') {
+        granularity = 86400;
+        const start = new Date('2026-01-01');
+        const now = new Date();
+        limit = Math.ceil(Math.abs(now - start) / (1000 * 60 * 60 * 24)) || 1;
+      }
+
+      const response = await fetch(`https://api.exchange.coinbase.com/products/${pair}/candles?granularity=${granularity}&limit=${limit}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+      });
+      if (!response.ok) return null;
+      const buckets = await response.json();
+      if (!Array.isArray(buckets) || buckets.length === 0) return null;
+
+      buckets.forEach(b => {
+        // Struktur data bucket Coinbase: [time, low, high, open, close, volume]
+        const [time, low, high, open, close, volume] = b;
+        const hargaRataRata = (open + close + high + low) / 4;
+        const candleVolumeUsd = volume * hargaRataRata;
+
+        if (high === low) {
+          total_buy += candleVolumeUsd / 2;
+          total_sell += candleVolumeUsd / 2;
+        } else {
+          // RUMUS KUANTITATIF VOLUME SPLIT: Membelah total volume bursa secara dinamis
+          const buyFraction = (close - low) / (high - low);
+          const sellFraction = (high - close) / (high - low);
+          
+          total_buy += candleVolumeUsd * buyFraction;
+          total_sell += candleVolumeUsd * sellFraction;
+        }
+      });
     }
 
     const total = total_buy + total_sell;
@@ -85,7 +113,7 @@ async function calculateRealTransactionFlow(coin, timeframe) {
   }
 }
 
-// 4. PERBAIKAN DI SINI: Sekarang menerima parameter 'coin' secara dinamis
+// 4. Kirim Tombol Pilihan Menu Waktu ke Telegram
 async function sendTimeframeMenu(chatId, coin) {
   const token = process.env.TELEGRAM_TOKEN;
   await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
