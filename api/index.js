@@ -28,7 +28,7 @@ module.exports = async (req, res) => {
         await getPersistentWatchlist(chatId); 
         const teksSapaan = 
           "👋 *Selamat Datang di Bot Riset Market Flow!*\n\n" +
-          "⚙️ *Aturan Watchlist Anda (Maksimal 3 Koin):*\n" +
+          "⚙️ *Atur Watchlist Anda (Maksimal 3 Koin):*\n" +
           "1. Slot 1 dikunci otomatis untuk *BTC*.\n" +
           "2. Slot 2 & 3 Bebas Anda tentukan dan tersimpan permanen di database.\n\n" +
           "Gunakan menu perintah berikut:\n" +
