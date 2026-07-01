@@ -1,6 +1,7 @@
 // api/index.js
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
+// IMPORT MESIN PEMBANTU DARI FILE UTILS
 const {
   getPersistentWatchlist,
   savePersistentWatchlist,
@@ -18,27 +19,32 @@ module.exports = async (req, res) => {
   try {
     const { message, callback_query } = req.body;
 
-    // SCENARIO 1: MENANGKAP PERINTAH TEKS
+    // =================================================================
+    // KONDISI 1: MENANGKAP PERINTAH TEKS (COMMAND DAN PENCARIAN BEBAS)
+    // =================================================================
     if (message && message.text) {
       const chatId = message.chat.id;
       const textInput = message.text.trim().toUpperCase();
 
+      // COMMAND 1: /START
       if (textInput === '/START') {
         await getPersistentWatchlist(chatId); 
         const teksSapaan = 
           "👋 *Selamat Datang di Bot Riset Market Flow!*\n\n" +
+          "ℹ️ *Sumber Data:* Bot ini bekerja menangkap rekaman transaksi mentah (*raw trades*) secara *real-time* langsung dari **Centralized Exchange (CEX)** global publik, memberikan peta volume riil perdagangan pasar.\n\n" +
           "⚙️ *Aturan Watchlist Anda (Maksimal 3 Koin):*\n" +
           "1. Slot 1 dikunci otomatis untuk *BTC*.\n" +
           "2. Slot 2 & 3 Bebas Anda tentukan dan tersimpan permanen di database.\n\n" +
           "Gunakan menu perintah berikut:\n" +
           "/watchlist - Cek analisis volume koin andalan Anda\n" +
           "/help - Buka buku panduan lengkap penggunaan bot\n\n" +
-          "💡 *Pencarian Bebas:* Anda bisa mengetik nama koin apa saja secara langsung untuk meriset volume (Contoh: `SOL`, `AVAX`, `LINK`).";
+          "💡 *Pencarian Bebas:* Ketik nama koin apa saja langsung tanpa simbol untuk cek volume bursa (Contoh: `SOL`, `AVAX`).";
         
         await sendToTelegram(chatId, teksSapaan);
         return res.status(200).send('OK');
       }
 
+      // COMMAND 2: /HELP (Buku Panduan dengan Penjelasan CEX)
       if (textInput === '/HELP') {
         const wl = await getPersistentWatchlist(chatId);
         const slot2Label = wl[1] ? `*${wl[1]}*` : '_Belum diatur_';
@@ -46,12 +52,14 @@ module.exports = async (req, res) => {
 
         const teksHelp = 
           "📖 *BUKU PANDUAN LENGKAP PENGGUNAAN BOT* 📖\n\n" +
+          "📌 *PENTING DIBACA (Mekanisme Data):*\n" +
+          "Bot ini *BUKAN* melacak mutasi dompet on-chain seperti Arkham, melainkan menyapu bersih dan menjumlahkan lembar nota eksekusi transaksi riil (*order flow/raw trades*) yang terjadi di **Centralized Exchange (CEX)**. Ini memberikan indikator kekuatan Beli (Inflow) vs Jual (Outflow) yang murni terjadi di pasar saat ini.\n\n" +
           "💡 *1. Cara Riset Koin Instan (On-Demand / Bebas):*\n" +
           "• Ketik langsung kode/simbol koin apa saja yang ingin Anda riset tanpa menggunakan garis miring.\n" +
           "• *Contoh:* Cukup ketik `SOL` atau `AVAX` atau `LINK` lalu kirim.\n" +
-          "• Bot akan mendeteksi input tersebut dan mengeluarkan pilihan rentang waktu riset.\n\n" +
+          "• Bot akan mendeteksi input tersebut dan mengeluarkan pilihan rentang waktu riset bursa.\n\n" +
           "📋 *2. Fitur Watchlist Permanen (/watchlist):*\n" +
-          "• Ketik perintah `/watchlist` untuk melakukan pemindaian serentak pada koin favorit Anda dalam rentang 24 jam.\n\n" +
+          "• Ketik perintah `/watchlist` untuk melakukan pemindaian volume CEX secara serentak pada koin favorit Anda dalam rentang 24 jam terakhir.\n\n" +
           "⚙️ *3. Status Slot Watchlist Akun Anda:* \n" +
           "• Slot 1 : 🔒 *BTC*\n" +
           "• Slot 2 : 🟢 Terisi koin: " + slot2Label + "\n" +
@@ -68,11 +76,12 @@ module.exports = async (req, res) => {
         return res.status(200).send('OK');
       }
 
+      // COMMAND 3: /WATCHLIST
       if (textInput === '/WATCHLIST') {
         const wl = await getPersistentWatchlist(chatId);
         const koinAktif = wl.filter(k => k !== null);
 
-        const processingMsg = await sendToTelegram(chatId, `⏳ _Sedang mengagregasikan data transaksi harian untuk koin Watchlist..._`);
+        const processingMsg = await sendToTelegram(chatId, `⏳ _Sedang mengagregasikan data transaksi harian bursa CEX untuk koin Watchlist..._`);
         const processingMsgId = processingMsg ? processingMsg.message_id : null;
 
         let hasilWatchlist = [];
@@ -95,14 +104,14 @@ module.exports = async (req, res) => {
         const d = new Date();
         const tanggalFormat = `${d.getDate()} ${namaBulan[d.getMonth()]} ${d.getFullYear()}`;
 
-        const barisHeader = `📋 *LIVE WATCHLIST MARKET FLOW* 📋\n📅 *Tanggal:* ${tanggalFormat}\n⏱️ *Rentang:* 24 Jam Terakhir (1D)\n\n`;
+        const barisHeader = `📋 *LIVE WATCHLIST MARKET FLOW (CEX)* 📋\n📅 *Tanggal:* ${tanggalFormat}\n⏱️ *Rentang:* 24 Jam Terakhir (1D)\n\n`;
         const gabunganList = hasilWatchlist.join('\n\n') + '\n\n';
 
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
         const promptAI = `
-          Anda adalah kepala strategi pergerakan dana crypto (Order Flow Specialist). Berikan analisis makro dari rangkuman data watchlist 24 jam terakhir berikut:
+          Anda adalah kepala strategi pergerakan dana crypto (Order Flow Specialist). Berikan analisis makro dari rangkuman data volume transaksi CEX 24 jam terakhir berikut:
           ${JSON.stringify(dataKonteksAI, null, 2)}
           Tugas Anda adalah menuliskan analisis makro komparatif dalam 1 hingga 2 kalimat tegas mengenai ke mana arah pergerakan uang besar secara keseluruhan di market saat ini. Langsung mulai teks dengan "*Kesimpulan Makro* : ". Jangan ulangi data angka statistik, gunakan Bahasa Indonesia.
         `;
@@ -120,15 +129,18 @@ module.exports = async (req, res) => {
         return res.status(200).send('OK');
       }
 
+      // Validasi input koin manual biasa
       if (/^[A-Z]{2,6}$/.test(textInput)) {
         await sendTimeframeMenu(chatId, textInput); 
       } else {
-        await sendToTelegram(chatId, "❌ Perintah tidak dikenal. Gunakan `/watchlist`, `/help`, atau ketik simbol koin langsung (Contoh: `SOL`).");
+        await sendToTelegram(chatId, "❌ Perintah tidak dikenal. Gunakan `/watchlist`, `/help`, or ketik simbol koin langsung (Contoh: `SOL`).");
       }
       return res.status(200).send('OK');
     }
 
-    // SCENARIO 2: MENANGKAP TOMBOL INTERAKTIF
+    // =================================================================
+    // KONDISI 2: MENANGKAP TOMBOL INTERAKTIF (CALLBACK QUERIES)
+    // =================================================================
     if (callback_query) {
       const callbackQueryId = callback_query.id;
       const chatId = callback_query.message.chat.id;
@@ -168,7 +180,7 @@ module.exports = async (req, res) => {
 
       if (callbackData.startsWith('ANALYZE:')) {
         const [_, coin, timeframe] = callbackData.split(':');
-        const processingMsg = await sendToTelegram(chatId, `⏳ _Sedang menghitung akumulasi rekaman transaksi riil ${coin} [${timeframe}]..._`);
+        const processingMsg = await sendToTelegram(chatId, `⏳ _Sedang menghitung akumulasi rekaman transaksi CEX ${coin} [${timeframe}]..._`);
         const processingMsgId = processingMsg ? processingMsg.message_id : null;
 
         const flowData = await calculateRealTransactionFlow(coin, timeframe);
@@ -189,7 +201,7 @@ module.exports = async (req, res) => {
         const labelMap = { '1H': 'Last 1H', '2H': 'Last 2H', '4H': 'Last 4H', '1D': 'Last 1D', '1W': 'Last 1W', '1M': 'Last 1M', 'YTD': 'YTD' };
         const textTimeframe = labelMap[timeframe] || timeframe;
 
-        const barisHeader = `📊 *HASIL RISET MARKET FLOW: ${coin}* 📊\n\n`;
+        const barisHeader = `📊 *HASIL RISET MARKET FLOW: ${coin} (CEX)* 📊\n\n`;
         const barisStatus = `${emojiStatus} _Data Transaksi Teratas (${textTimeframe})_, ${tanggalFormat}.\n\n`;
         const barisListAgregat = `- Pembelian ${coin} | Inflow ( Senilai : $${Math.round(flowData.total_buy).toLocaleString('en-US')} | ${flowData.buy_pct}% Dominasi )\n- Penjualan ${coin} | Outflow ( Senilai : $${Math.round(flowData.total_sell).toLocaleString('en-US')} | ${flowData.sell_pct}% Dominasi )\n\n`;
 
@@ -197,7 +209,7 @@ module.exports = async (req, res) => {
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
         const promptAI = `
-          Anda adalah analis kuantitatif pergerakan orderbook pasar crypto. Berikan kesimpulan tajam dari hasil penjumlahan transaksi riil ini:
+          Anda adalah analis kuantitatif pergerakan orderbook pasar crypto. Berikan kesimpulan tajam dari hasil penjumlahan transaksi riil bursa CEX ini:
           Koin: ${coin} | Jangka Waktu: ${textTimeframe} | Inflow: $${flowData.total_buy} (${flowData.buy_pct}%) | Outflow: $${flowData.total_sell} (${flowData.sell_pct}%)
           Tuliskan 1 hingga 2 kalimat analisis logis mengenai implikasi dominasi volume terhadap arah harga ke depan. Langsung buka teks jawaban Anda dengan kalimat "*Kesimpulan Logis* : ".
         `;
